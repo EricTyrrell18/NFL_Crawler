@@ -64,7 +64,10 @@ class PlayerbotSpider(scrapy.Spider):
                 stats = row.css("td:nth-child(n+5)::text").extract()
                 # TODO: Determine if this is a good approach. Perhaps it should ignore games the player didn't play which would substantially reduce the 0's in a players dataset.
                 stats = [stat if stat != "--" else "0.0" for stat in stats]
-
+                # Drop games in which they didn't play
+                # Bye weeks have "--" in the g column so they'll be replaced with "0.0"
+                if stats[0] == "0" or stats[0] == "0.0":
+                    continue
                 weekly_data[cur_week] = [cur_date, cur_opp, final_score] + stats
 
             table_data[table_name] = weekly_data
