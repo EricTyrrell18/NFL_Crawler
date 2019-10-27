@@ -9,7 +9,7 @@ class TeambotSpider(scrapy.Spider):
             "LA", "HOU", "JAX", "CLE", "TB", "NO", "DEN",  "WAS", "CAR", "TEN",
             "CIN", "LAC", "DET", "SEA", "IND", "BUF", "SF","PIT", "CHI" ,"MIA",
              "BAL", "ARI" ]
-    years = list(range(1990,2020))
+    years = list(range(2005,2020))
     url_params = itertools.product(years, team_profiles)
     url_str = "http://www.nfl.com/teams/statistics?season={}&team={}"
     
