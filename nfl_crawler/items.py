@@ -21,4 +21,4 @@ class PlayerItem(scrapy.Item):
 	name = scrapy.Field()
 	year = scrapy.Field()
 	headers = scrapy.Field()
-	rows = scrapy.Field()
+	data = scrapy.Field()

@@ -25,61 +25,52 @@ class PlayerbotSpider(scrapy.Spider):
     def parse_player(self, response):
         #Selector for looking at all seasons player
         years = response.css("option::attr(value)").extract()
-        logging.warning(years)                
-        # format of data should look like [[2000, [1,23,21,231]],[2001,[12324,214,11]]]
-        for y in years:
-            yield scrapy.Request(response.url+"?season={}".format(y), callback=self.process_tables, cb_kwargs=dict(year=y)) 
+        player_item = PlayerItem()
+        player_item["name"] = response.css("span.player-name::text").extract_first().strip()
+        player_item["identifier"] = response.url.split("/")[5]
+        player_item["headers"] = response.css("table").css("thead tr.player-table-key td::text").extract()
+        player_item["data"] = dict()
+        # Recursively update the PlayerItem with multiple years of data
+        url_to_format = response.url+"?season={}"
+        yield scrapy.Request(url_to_format.format(years[0]), callback=self.process_tables, cb_kwargs=dict(year = years[0], player = player_item, years_remaining = years[1:], url_base = url_to_format )) 
 
-    def process_tables(self, response, year):
-        year_item = PlayerItem()
-        year_item["year"] = year
-        year_item["name"] = response.css("span.player-name::text").extract_first().strip()
-        year_item["identifier"] = response.url.split("/")[5]
-        # select all tables. Could be several such as preseason, regular season, post season, probowl 
+    def process_tables(self, response, year, player, years_remaining, url_base):
+        
+        # Select all tables. Could be several such as preseason, regular season, post season, probowl 
         raw_tables = response.css("table")
-        table = raw_tables        
-        # We only care about the regular season
-        for t in raw_tables:
-            if t.css("thead tr td::text").extract_first() == "Regular Season":
-                table = t
-            else:
-                logging.log(logging.ERROR, "No Regular Season Found{}".format(response.url) )
-        #Selector for extracting column headers
-        #Players will have different column headers dependent on position
-        #Week will be the key in the dictionary, so it can be ignored
-        year_item["headers"] = response.css("table").css("thead tr.player-table-key td::text").extract()
-        # Selector for extracting each row
-        rows = table.css("tbody tr")
-    
-        # get rid of empty rows which are used for formatting
-        rows = [x for x in rows if x.css("td::text").extract_first()] 
-        # get rid of last row because it is unneeded
-        # the last row is unneeded because it's the total of the previous rows
-        # and it would complicate things further to scrape
-        rows = rows[:len(rows)-1]
-        weekly_data = []        
-        for row in rows:
-            # collect the first two columns: week and Game Date
-            cur_week = row.css("td:nth-child(1)::text").extract_first()
-            cur_date = row.css("td:nth-child(2)::text").extract_first()
+        table_data = dict()      
+        # Grab preseason, regular season, post season, probowls, and whatever else there is
+        for table in raw_tables:
+            # Pull the name of the table to use as an identified
+            table_name = table.css("thead tr:first-child td:first-child::text").extract_first()
             
-            # the next two columns have an odd format and need separate selectors
-            # handle Opp
-            # this doesn't select the exact opponent, but can be cleaned up in the item pipeline (ie strip())
-            cur_opp = row.css("td:nth-child(3) a::text").re_first("[A-Za-z]{2,3}")
+            rows = table.css("tbody tr")
+            # Remove rows which don't contain any information 
+            rows = [x for x in rows if x.css("td::text").extract_first()]
+            # Remove the "total" row because it complicates things
+            rows = rows[:-1]
 
-            # handle Result
-            # same as before. Format in pipeline
-            final_score = row.css("td:nth-child(4)").re_first("\d+\-\d+")
+            weekly_data = dict()
+            for row in rows:
+                cur_week = row.css("td:nth-child(1)::text").extract_first()
+                cur_date = row.css("td:nth-child(2)::text").extract_first()
+                # Regex is required because extracting is interacting wierdly with the whitespace here
+                # TODO: extend regex to include the "@" which signifies an away game
+                # possibly generate an additional header for this 
+                cur_opp = row.css("td:nth-child(3) a::text").re_first("[A-Za-z]{2,3}")
+                final_score = row.css("td:nth-child(4)").re_first("\d+\-\d+")
 
-            # collect the rest of the columns
-            stats = row.css("td:nth-child(n+5)::text").extract()
-            # "--" means they didn't have a statline for this stat this week
-            # TODO: determine if this is a mistake which will have an impact on analysis.
-            # because of the difference between a natural 0 and a dnp or injury
-            stats = [stat if stat != "--" else "0.0" for stat in stats]
-            #combine all the columns together
-            columns = [cur_week, cur_date, cur_opp, final_score] + stats 
-            weekly_data.append(columns)
-        year_item["rows"] = weekly_data
-        yield year_item
+                # Collect the rest of the data
+                stats = row.css("td:nth-child(n+5)::text").extract()
+                # TODO: Determine if this is a good approach. Perhaps it should ignore games the player didn't play which would substantially reduce the 0's in a players dataset.
+                stats = [stat if stat != "--" else "0.0" for stat in stats]
+
+                weekly_data[cur_week] = [cur_date, cur_opp, final_score] + stats
+
+            table_data[table_name] = weekly_data
+
+        player["data"][year] = table_data
+        if years_remaining:
+            yield scrapy.Request(url_base.format(years_remaining[0]), callback=self.process_tables, cb_kwargs=dict(year = years_remaining[0], player = player, years_remaining = years_remaining[1:], url_base = url_base))
+        else:
+            yield player
