@@ -22,3 +22,12 @@ class PlayerItem(scrapy.Item):
 	year = scrapy.Field()
 	headers = scrapy.Field()
 	data = scrapy.Field()
+
+class NflGameItem(scrapy.Item):
+	year = scrapy.Field()
+	date = scrapy.Field()
+	away_team = scrapy.Field()
+	home_team = scrapy.Field()
+	away_score = scrapy.Field()
+	home_score = scrapy.Field()
+	stadium = scrapy.Field()
